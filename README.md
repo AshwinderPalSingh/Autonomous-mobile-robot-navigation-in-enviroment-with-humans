@@ -83,6 +83,49 @@ social_nav_ws/
     ├── social_costmap_plugin/
     └── social_nav_msgs/
 ```
+## Flow Diagram
+
+```mermaid
+flowchart TB
+    subgraph Mission["Mission and Evaluation"]
+        DM["delivery_manager.py<br/>Delivery mission waypoints"]
+        ML["metrics_logger.py<br/>A/B metrics logger"]
+    end
+
+    subgraph Navigation["Navigation Layer"]
+        NAV["Nav2 stack<br/>AMCL + NavFn + DWB"]
+        COST["Layered costmaps<br/>static + obstacle + inflation + social_layer"]
+        SOCIAL["social_costmap_plugin<br/>asymmetric Gaussian field<br/>+ lethal pedestrian core"]
+    end
+
+    subgraph Simulation["Simulation and Human Motion"]
+        GZ["Ignition Gazebo<br/>warehouse + robot + sensors"]
+        BRIDGE["ros_gz_bridge"]
+        PED["pedestrian_sim<br/>ORCA pedestrian motion"]
+    end
+
+    RVIZ["RViz2<br/>robot, path, costmaps,<br/>pedestrian markers"]
+
+    DM -->|"NavigateToPose action"| NAV
+
+    NAV --> COST
+    SOCIAL -->|"writes social costs"| COST
+    PED -->|"/pedestrians"| SOCIAL
+
+    NAV -->|"/cmd_vel"| BRIDGE
+    BRIDGE --> GZ
+    GZ --> BRIDGE
+    BRIDGE -->|"/odom /scan /tf /imu"| NAV
+
+    PED -->|"/pedestrian_markers"| RVIZ
+    NAV -->|"paths + costmaps"| RVIZ
+    BRIDGE -->|"/odom /scan /tf"| RVIZ
+
+    PED -->|"/pedestrians"| ML
+    BRIDGE -->|"/odom"| ML
+
+    GZ -->|"robot pose for ORCA"| PED
+```
 
 ---
 
@@ -99,6 +142,8 @@ social_nav_ws/
 | `delivery_bot_bringup` | `ament_python` | Top-level orchestration launch, delivery mission manager, and metrics logger. |
 
 ---
+
+
 
 ## System Architecture
 
