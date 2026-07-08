@@ -1,4 +1,5 @@
 # Autonomous Mobile Robot Navigation in an Environment with Humans
+ ![Gazebo warehouse-simulation](docs/images/simulation.gif) 
 
 A ROS 2 Humble workspace for a simulated autonomous delivery robot that
 navigates a warehouse with moving pedestrians. The system uses the Nav2 stack
@@ -15,19 +16,14 @@ Author: **AshwinderPalSingh**
 
 ---
 
-## Media Placeholders
 
-Upload screenshots or diagrams to `docs/images/` using the filenames below.
-The README already references them so the images will render automatically on
-GitHub after upload.
 
-| View | Image slot |
+|  |  |
 |---|---|
-| Gazebo warehouse simulation | ![Gazebo warehouse simulation](docs/images/gazebo-warehouse.png) |
-| RViz Nav2 stack and robot model | ![RViz navigation view](docs/images/rviz-navigation.png) |
-| Social costmap around pedestrians | ![RViz social costmap](docs/images/rviz-social-costmap.png) |
-| Full system flow / architecture | ![System flow diagram](docs/images/system-flow.png) |
-| A/B comparison: baseline vs social layer | ![Baseline versus social navigation](docs/images/ab-comparison.png) |
+| Gazebo warehouse simulation | ![Gazebo warehouse simulation](docs/images/gazebo-warehouse.png.jpeg) |
+| RViz Nav2 stack and robot model | ![RViz navigation view](docs/images/rviz-navigation.png.jpeg) |
+| Social costmap around pedestrians | ![RViz social costmap](docs/images/rviz-social-costmap.png.jpeg) |
+| A/B comparison: baseline vs social layer | ![Baseline versus social navigation](docs/images/A%7B.gif) |
 
 ---
 
