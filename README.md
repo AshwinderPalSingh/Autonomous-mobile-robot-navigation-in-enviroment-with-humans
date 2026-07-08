@@ -23,7 +23,7 @@ Author: **AshwinderPalSingh**
 | Gazebo warehouse simulation | ![Gazebo warehouse simulation](docs/images/gazebo-warehouse.png.jpeg) |
 | RViz Nav2 stack and robot model | ![RViz navigation view](docs/images/rviz-navigation.png.jpeg) |
 | Social costmap around pedestrians | ![RViz social costmap](docs/images/rviz-social-costmap.png.jpeg) |
-| A/B comparison: baseline vs social layer | ![Baseline versus social navigation](docs/images/A%7B.gif) |
+| A/B comparison: baseline vs social layer | ![Baseline versus social navigation](docs/images/A-B.gif) |
 
 ---
 
