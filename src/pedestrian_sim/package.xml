@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>pedestrian_sim</name>
+  <version>0.1.0</version>
+  <description>Kinematic pedestrian simulator publishing ground-truth detections and RViz markers.</description>
+  <maintainer email="AshwinderPalSingh@users.noreply.github.com">AshwinderPalSingh</maintainer>
+  <license>Apache-2.0</license>
+
+  <depend>rclpy</depend>
+  <depend>social_nav_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>visualization_msgs</depend>
+  <depend>std_msgs</depend>
+  <!-- Python-RVO2 (ORCA collision avoidance) is a pip dependency, not a
+       rosdep-resolvable package. See the top-level README Install section. -->
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

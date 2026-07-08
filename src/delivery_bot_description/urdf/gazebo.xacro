@@ -1,0 +1,133 @@
+<?xml version="1.0"?>
+<!--
+  Ignition Fortress (ROS 2 Humble pairing) systems and sensors.
+
+  Notes:
+  - Plugin filenames/classes use the `ignition::gazebo::systems::*` naming
+    (Fortress). On Jazzy/Harmonic these would be `gz::sim::systems::*`.
+  - <ignition_frame_id> overrides the frame stamped into sensor messages so
+    they match the URDF link names instead of Ignition's scoped
+    `model/link/sensor` names. Requires an up-to-date Fortress (6.1+, any
+    current apt binary qualifies).
+  - The world file must load the Sensors (ogre2) and Imu systems for these
+    sensors to produce data; warehouse.sdf does this.
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- ============ Contact friction ============ -->
+  <!-- Casters ~frictionless so DiffDrive kinematics dominate -->
+  <gazebo reference="front_caster_link">
+    <mu1>0.001</mu1>
+    <mu2>0.001</mu2>
+  </gazebo>
+  <gazebo reference="rear_caster_link">
+    <mu1>0.001</mu1>
+    <mu2>0.001</mu2>
+  </gazebo>
+  <gazebo reference="left_wheel_link">
+    <mu1>1.2</mu1>
+    <mu2>1.2</mu2>
+  </gazebo>
+  <gazebo reference="right_wheel_link">
+    <mu1>1.2</mu1>
+    <mu2>1.2</mu2>
+  </gazebo>
+
+  <!-- ============ Differential drive ============ -->
+  <!--
+    Subscribes: /cmd_vel   (ignition.msgs.Twist, bridged from Nav2's output)
+    Publishes:  /odom      (ignition.msgs.Odometry)
+                /tf        (ignition.msgs.Pose_V -> bridged to tf2_msgs/TFMessage)
+    This is the single authority for the odom -> base_footprint transform.
+  -->
+  <gazebo>
+    <plugin filename="libignition-gazebo-diff-drive-system.so"
+            name="ignition::gazebo::systems::DiffDrive">
+      <left_joint>left_wheel_joint</left_joint>
+      <right_joint>right_wheel_joint</right_joint>
+      <wheel_separation>0.44</wheel_separation>
+      <wheel_radius>0.09</wheel_radius>
+
+      <topic>cmd_vel</topic>
+      <odom_topic>odom</odom_topic>
+      <tf_topic>/tf</tf_topic>
+      <frame_id>odom</frame_id>
+      <child_frame_id>base_footprint</child_frame_id>
+      <odom_publish_frequency>50</odom_publish_frequency>
+
+      <max_linear_acceleration>2.5</max_linear_acceleration>
+      <min_linear_acceleration>-2.5</min_linear_acceleration>
+      <max_angular_acceleration>4.0</max_angular_acceleration>
+      <min_angular_acceleration>-4.0</min_angular_acceleration>
+    </plugin>
+
+    <!-- Wheel joint states (default topic /world/<world>/model/<model>/joint_state,
+         bridged + remapped to /joint_states in sim.launch.py) -->
+    <plugin filename="libignition-gazebo-joint-state-publisher-system.so"
+            name="ignition::gazebo::systems::JointStatePublisher">
+      <joint_name>left_wheel_joint</joint_name>
+      <joint_name>right_wheel_joint</joint_name>
+    </plugin>
+  </gazebo>
+
+  <!-- ============ 2D lidar ============ -->
+  <gazebo reference="lidar_link">
+    <sensor name="lidar" type="gpu_lidar">
+      <topic>scan</topic>
+      <update_rate>10</update_rate>
+      <ignition_frame_id>lidar_link</ignition_frame_id>
+      <lidar>
+        <scan>
+          <horizontal>
+            <samples>360</samples>
+            <resolution>1</resolution>
+            <min_angle>-3.141592</min_angle>
+            <max_angle>3.141592</max_angle>
+          </horizontal>
+        </scan>
+        <range>
+          <min>0.15</min>
+          <max>12.0</max>
+          <resolution>0.01</resolution>
+        </range>
+      </lidar>
+      <always_on>true</always_on>
+      <visualize>true</visualize>
+    </sensor>
+  </gazebo>
+
+  <!-- ============ IMU ============ -->
+  <gazebo reference="imu_link">
+    <sensor name="imu" type="imu">
+      <topic>imu</topic>
+      <update_rate>100</update_rate>
+      <ignition_frame_id>imu_link</ignition_frame_id>
+      <always_on>true</always_on>
+    </sensor>
+  </gazebo>
+
+  <!-- ============ Front RGB-D camera ============ -->
+  <!-- Publishes camera/image, camera/depth_image, camera/points, camera/camera_info.
+       Not used by the nav stack (kept in scope for visualization/portfolio). -->
+  <gazebo reference="camera_link">
+    <sensor name="rgbd_camera" type="rgbd_camera">
+      <topic>camera</topic>
+      <update_rate>10</update_rate>
+      <ignition_frame_id>camera_link_optical</ignition_frame_id>
+      <camera>
+        <horizontal_fov>1.25</horizontal_fov>
+        <image>
+          <width>320</width>
+          <height>240</height>
+          <format>R8G8B8</format>
+        </image>
+        <clip>
+          <near>0.2</near>
+          <far>8.0</far>
+        </clip>
+      </camera>
+      <always_on>true</always_on>
+    </sensor>
+  </gazebo>
+
+</robot>

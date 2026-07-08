@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>social_costmap_plugin</name>
+  <version>0.1.0</version>
+  <description>
+    Custom Nav2 costmap layer: velocity-scaled asymmetric Gaussian social cost
+    around pedestrians, with a lethal core over the body. Detections arrive as
+    social_nav_msgs/Pedestrians and are TF-transformed into the costmap frame.
+  </description>
+  <maintainer email="AshwinderPalSingh@users.noreply.github.com">AshwinderPalSingh</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>rclcpp_lifecycle</depend>
+  <depend>nav2_costmap_2d</depend>
+  <depend>pluginlib</depend>
+  <depend>geometry_msgs</depend>
+  <depend>social_nav_msgs</depend>
+  <depend>tf2</depend>
+  <depend>tf2_ros</depend>
+  <depend>tf2_geometry_msgs</depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

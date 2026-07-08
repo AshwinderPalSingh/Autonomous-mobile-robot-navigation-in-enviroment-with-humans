@@ -1,0 +1,205 @@
+<?xml version="1.0" ?>
+<!--
+  Warehouse world for the social navigation project (Ignition Fortress).
+
+  Layout (top view, meters, interior 12 x 9, robot spawns at origin):
+
+        y=+4.5  ─────────────────────────────────────────
+                │            [box_1]                    │
+                │   [shelf_a]        <── ped_2 ──>      │
+                │                                       │
+                │      R(0,0)        ped_1   [ped_3     │
+                │                      │      loop]     │
+                │   [shelf_b]          │                │
+                │  [pillar]            v     [box_2]    │
+        y=-4.5  ─────────────────────────────────────────
+              x=-6                                    x=+6
+
+  Pedestrian paths (pedestrian_sim/config/pedestrians.yaml) are kept clear
+  of static obstacles. The Sensors (ogre2) and Imu systems below are REQUIRED
+  for the robot's gpu_lidar / imu / rgbd_camera to produce data.
+-->
+<sdf version="1.8">
+  <world name="warehouse">
+
+    <physics name="4ms" type="ignored">
+      <max_step_size>0.004</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+
+    <plugin filename="libignition-gazebo-physics-system.so"
+            name="ignition::gazebo::systems::Physics"/>
+    <plugin filename="libignition-gazebo-user-commands-system.so"
+            name="ignition::gazebo::systems::UserCommands"/>
+    <plugin filename="libignition-gazebo-scene-broadcaster-system.so"
+            name="ignition::gazebo::systems::SceneBroadcaster"/>
+    <plugin filename="libignition-gazebo-sensors-system.so"
+            name="ignition::gazebo::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+    <plugin filename="libignition-gazebo-imu-system.so"
+            name="ignition::gazebo::systems::Imu"/>
+
+    <scene>
+      <ambient>0.8 0.8 0.8 1</ambient>
+      <background>0.4 0.4 0.45 1</background>
+      <shadows>false</shadows>
+      <grid>false</grid>
+    </scene>
+
+    <light type="directional" name="sun">
+      <cast_shadows>false</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.85 0.85 0.85 1</diffuse>
+      <specular>0.0 0.0 0.0 1</specular>
+      <direction>0 0 -1</direction>
+    </light>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><plane><normal>0 0 1</normal><size>30 30</size></plane></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><plane><normal>0 0 1</normal><size>30 30</size></plane></geometry>
+          <material>
+            <ambient>0.75 0.75 0.75 1</ambient>
+            <diffuse>0.75 0.75 0.75 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- =================== Outer walls (interior 12 x 9) =================== -->
+    <model name="wall_north">
+      <static>true</static>
+      <pose>0 4.5 0.5 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>12.3 0.15 1.0</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>12.3 0.15 1.0</size></box></geometry>
+          <material><ambient>0.85 0.85 0.82 1</ambient><diffuse>0.85 0.85 0.82 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="wall_south">
+      <static>true</static>
+      <pose>0 -4.5 0.5 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>12.3 0.15 1.0</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>12.3 0.15 1.0</size></box></geometry>
+          <material><ambient>0.85 0.85 0.82 1</ambient><diffuse>0.85 0.85 0.82 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="wall_east">
+      <static>true</static>
+      <pose>6 0 0.5 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.15 9.3 1.0</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.15 9.3 1.0</size></box></geometry>
+          <material><ambient>0.85 0.85 0.82 1</ambient><diffuse>0.85 0.85 0.82 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="wall_west">
+      <static>true</static>
+      <pose>-6 0 0.5 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.15 9.3 1.0</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.15 9.3 1.0</size></box></geometry>
+          <material><ambient>0.85 0.85 0.82 1</ambient><diffuse>0.85 0.85 0.82 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- =================== Shelves (SLAM features + corridors) =================== -->
+    <model name="shelf_a">
+      <static>true</static>
+      <pose>-1.0 2.0 0.4 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>2.5 0.6 0.8</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>2.5 0.6 0.8</size></box></geometry>
+          <material><ambient>0.55 0.40 0.25 1</ambient><diffuse>0.55 0.40 0.25 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="shelf_b">
+      <static>true</static>
+      <pose>-1.0 -2.0 0.4 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>2.5 0.6 0.8</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>2.5 0.6 0.8</size></box></geometry>
+          <material><ambient>0.55 0.40 0.25 1</ambient><diffuse>0.55 0.40 0.25 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- =================== Loose stock boxes =================== -->
+    <model name="box_1">
+      <static>true</static>
+      <pose>4.8 3.2 0.3 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.8 0.8 0.6</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.8 0.8 0.6</size></box></geometry>
+          <material><ambient>0.72 0.62 0.42 1</ambient><diffuse>0.72 0.62 0.42 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="box_2">
+      <static>true</static>
+      <pose>4.8 -3.2 0.3 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.8 0.8 0.6</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.8 0.8 0.6</size></box></geometry>
+          <material><ambient>0.72 0.62 0.42 1</ambient><diffuse>0.72 0.62 0.42 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- =================== Structural pillar =================== -->
+    <model name="pillar">
+      <static>true</static>
+      <pose>-3.5 -2.5 0.5 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.4 0.4 1.0</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.4 0.4 1.0</size></box></geometry>
+          <material><ambient>0.35 0.35 0.38 1</ambient><diffuse>0.35 0.35 0.38 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+  </world>
+</sdf>

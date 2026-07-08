@@ -1,0 +1,38 @@
+# Pedestrian scenario for the warehouse world.
+# Waypoints are flat [x1, y1, x2, y2, ...] lists in `frame_id`.
+# NOTE: the robot spawns at world (0, 0), so odom coordinates == world coordinates.
+# Warehouse interior: x in [-5.8, 5.8], y in [-4.3, 4.3]
+# Shelves at (-1, ±2), boxes at (4.8, ±3.2), pillar at (-3.5, -2.5)
+#
+# IMPORTANT: All paths must stay >= 1.5 m from the robot spawn (0, 0) to
+#            prevent pedestrians crowding the robot at startup.
+pedestrian_simulator:
+  ros__parameters:
+    use_sim_time: true
+    update_rate: 20.0
+    frame_id: odom
+    pedestrians: [ped_1, ped_2, ped_3, ped_4]
+
+    ped_1:                         # north corridor, east-west
+      waypoints: [3.5, 3.5, -4.5, 3.5]
+      speed: 0.55
+      mode: pingpong
+      noise_std: 0.0
+
+    ped_2:                         # south corridor, east-west
+      waypoints: [-4.5, -3.5, 3.5, -3.5]
+      speed: 0.6
+      mode: pingpong
+      noise_std: 0.0
+
+    ped_3:                         # east side, north-south
+      waypoints: [3.5, -3.0, 3.5, 3.0]
+      speed: 0.5
+      mode: pingpong
+      noise_std: 0.0
+
+    ped_4:                         # west side loop
+      waypoints: [-4.5, -3.0, -4.5, 3.0, -3.0, 3.0, -3.0, -3.0]
+      speed: 0.45
+      mode: loop
+      noise_std: 0.0

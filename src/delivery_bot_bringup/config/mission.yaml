@@ -1,0 +1,24 @@
+# Delivery mission for delivery_manager.
+#
+# waypoints: flat [x, y, yaw, x, y, yaw, ...] list in the MAP frame.
+# These four stops route the robot across all four pedestrian crossings
+# defined in pedestrian_sim/config/pedestrians.yaml, so the social layer's
+# effect is exercised on every loop. Tune to your saved map if needed.
+#
+# localizer: 'amcl' for default nav.launch.py, 'slam_toolbox' for slam:=True.
+delivery_manager:
+  ros__parameters:
+    use_sim_time: true
+    localizer: amcl
+    loops: 2
+    stop_on_failure: false
+    leg_timeout: 180.0
+    set_initial_pose: false
+    initial_pose: [0.0, 0.0, 0.0]
+    # NW pickup -> NE dropoff -> SE dropoff -> SW return
+    waypoints: [
+      -4.5,  3.5,  3.1416,
+       2.0,  3.5,  0.0,
+       3.5, -3.5, -1.5708,
+      -4.5, -3.5,  3.1416
+    ]

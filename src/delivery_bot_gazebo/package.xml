@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>delivery_bot_gazebo</name>
+  <version>0.1.0</version>
+  <description>
+    Ignition Fortress warehouse world and simulation bringup for the
+    delivery_bot: gz sim launch, robot spawn, and the ROS-GZ topic bridge.
+  </description>
+  <maintainer email="AshwinderPalSingh@users.noreply.github.com">AshwinderPalSingh</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <exec_depend>delivery_bot_description</exec_depend>
+  <exec_depend>ros_gz_sim</exec_depend>
+  <exec_depend>ros_gz_bridge</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

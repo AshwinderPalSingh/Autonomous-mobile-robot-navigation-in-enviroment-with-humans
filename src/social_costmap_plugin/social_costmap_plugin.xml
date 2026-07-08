@@ -1,0 +1,12 @@
+<class_libraries>
+  <library path="social_costmap_plugin">
+    <class name="social_costmap_plugin/SocialLayer"
+           type="social_costmap_plugin::SocialLayer"
+           base_class_type="nav2_costmap_2d::Layer">
+      <description>
+        Velocity-scaled asymmetric Gaussian social cost around pedestrians,
+        with a lethal core over the body. Kirby-style proxemics model.
+      </description>
+    </class>
+  </library>
+</class_libraries>

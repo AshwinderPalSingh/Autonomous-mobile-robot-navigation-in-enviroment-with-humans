@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>delivery_bot_bringup</name>
+  <version>0.1.0</version>
+  <description>
+    Top-level orchestration for the social navigation delivery robot:
+    full-system bringup launch, delivery mission manager, and the A/B
+    metrics logger.
+  </description>
+  <maintainer email="AshwinderPalSingh@users.noreply.github.com">AshwinderPalSingh</maintainer>
+  <license>Apache-2.0</license>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>nav2_simple_commander</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
+  <exec_depend>social_nav_msgs</exec_depend>
+  <exec_depend>delivery_bot_gazebo</exec_depend>
+  <exec_depend>delivery_bot_navigation</exec_depend>
+  <exec_depend>pedestrian_sim</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

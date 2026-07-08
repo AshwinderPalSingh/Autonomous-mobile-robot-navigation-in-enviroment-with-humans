@@ -1,0 +1,748 @@
+================================================================================
+   SOCIAL-AWARE NAVIGATION FOR AN AUTONOMOUS DELIVERY ROBOT
+   Comprehensive Project Explanation
+================================================================================
+
+TABLE OF CONTENTS
+  1. What the Project Does
+  2. Technology Stack
+  3. High-Level Architecture
+  4. How the Robot Dodges Pedestrians (The Core Innovation)
+  5. How Pedestrians Dodge the Robot (ORCA / RVO2)
+  6. Package-by-Package Breakdown
+  7. Complete File Listing with Explanations
+  8. Data Flow: Topics, TF Frames, and Messages
+  9. The A/B Evaluation Protocol
+ 10. How to Run the Project
+ 11. Key Design Decisions
+
+================================================================================
+1. WHAT THE PROJECT DOES
+================================================================================
+
+This project builds a differential-drive delivery robot that navigates a
+simulated warehouse environment using the full Nav2 navigation stack, extended
+with a CUSTOM NAV2 COSTMAP LAYER that makes the robot respect pedestrians'
+personal space and anticipate where they are walking.
+
+The robot delivers packages between four waypoints in a warehouse while
+4 simulated pedestrians walk around. The key contribution is:
+
+  * A custom Nav2 costmap plugin ("social_costmap_plugin") that paints a
+    velocity-scaled, asymmetric Gaussian cost field around each pedestrian.
+  * The cost field stretches AHEAD of a moving person (based on their velocity),
+    so the planner routes around WHERE THE PERSON IS GOING, not just where
+    they currently are.
+  * A lethal core over the pedestrian's body ensures no path ever routes
+    through a person.
+
+The project includes an A/B evaluation protocol:
+  - Run A (Baseline): Social layer disabled → robot drives straight through
+    pedestrians (they're invisible to lidar, so without the social layer
+    the robot literally can't see them).
+  - Run B (Social): Social layer enabled → robot detours around pedestrians.
+  - Metrics are logged (min distance, personal-space intrusions, path length,
+    duration) to quantify the exact trade-off.
+
+
+================================================================================
+2. TECHNOLOGY STACK
+================================================================================
+
+  * ROS 2 Humble Hawksbill
+  * Ignition Fortress (Gazebo) — physics simulation
+  * slam_toolbox — SLAM (Simultaneous Localization and Mapping)
+  * Nav2 (Navigation2) — full autonomous navigation stack
+    - NavFn global planner
+    - DWB (Dynamic Window B) local controller
+    - AMCL localization (on saved maps)
+  * Python-RVO2 (ORCA) — collision avoidance for pedestrian simulation
+  * Ubuntu 22.04
+
+
+================================================================================
+3. HIGH-LEVEL ARCHITECTURE
+================================================================================
+
+The system has three main layers:
+
+  ┌─────────────────────────────────────────────────────────────┐
+  │                    LAYER 3: MISSION                        │
+  │  delivery_manager.py → sends waypoints via Nav2 API        │
+  │  metrics_logger.py → records A/B experiment data           │
+  └──────────────────────────┬──────────────────────────────────┘
+                             │ NavigateToPose action
+  ┌──────────────────────────▼──────────────────────────────────┐
+  │                    LAYER 2: NAVIGATION                      │
+  │  Nav2 stack: AMCL + NavFn planner + DWB controller          │
+  │  ┌───────────────────────────────────────────────────┐      │
+  │  │  COSTMAP (the core innovation):                   │      │
+  │  │  static_layer + obstacle_layer + inflation_layer  │      │
+  │  │  + ★ social_layer (custom plugin) ★               │      │
+  │  │    ↑ subscribes to /pedestrians topic              │      │
+  │  └───────────────────────────────────────────────────┘      │
+  └──────────────────────────┬──────────────────────────────────┘
+                             │ /cmd_vel
+  ┌──────────────────────────▼──────────────────────────────────┐
+  │                    LAYER 1: SIMULATION                      │
+  │  Gazebo (Ignition Fortress)                                 │
+  │  ├── warehouse.sdf world (walls, shelves, boxes, pillar)    │
+  │  ├── delivery_bot URDF (diff-drive, lidar, camera, IMU)     │
+  │  └── ros_gz_bridge (bridges Gazebo ↔ ROS topics)            │
+  │                                                             │
+  │  pedestrian_sim (separate ROS node, NOT in Gazebo)          │
+  │  ├── 4 pedestrians following waypoints with ORCA avoidance  │
+  │  ├── publishes /pedestrians → social_layer reads this       │
+  │  └── publishes /pedestrian_markers → RViz visualization     │
+  └─────────────────────────────────────────────────────────────┘
+
+
+================================================================================
+4. HOW THE ROBOT DODGES PEDESTRIANS (The Core Innovation)
+================================================================================
+
+The robot avoids pedestrians through the SOCIAL COSTMAP PLUGIN. Here's how:
+
+  1. The pedestrian_simulator node publishes each pedestrian's position and
+     velocity on the /pedestrians topic.
+
+  2. The social_layer plugin (loaded into Nav2's costmap) subscribes to
+     /pedestrians and, for each pedestrian, paints a cost field into the
+     costmap grid:
+
+     a) LETHAL CORE: Cells within 0.30m of the pedestrian's body are set
+        to LETHAL_OBSTACLE (cost 253). No path can ever cross through a
+        person's body.
+
+     b) ASYMMETRIC GAUSSIAN FIELD: Around the lethal core, a 2D Gaussian
+        cost field is painted. The shape depends on the pedestrian's velocity:
+
+        - AHEAD of the pedestrian (in the direction they're walking):
+          sigma_front = sigma_base × (1 + speed_factor × speed)
+          This stretches FAR ahead for fast walkers → the planner avoids
+          where they WILL BE, not just where they are now.
+
+        - BEHIND the pedestrian: sigma_back = sigma_base (small)
+          → The robot can pass behind a walking person more closely.
+
+        - TO THE SIDE: sigma_side = sigma_base × sigma_side_ratio
+          → Moderate clearance on the sides.
+
+        - STANDING STILL: Isotropic (circular) Gaussian with sigma_base.
+          No heading is defined, so equal clearance in all directions.
+
+     c) MERGE POLICY: Costs are merged with max() — the social layer can
+        only RAISE cost, never lower it. A real wall detected by lidar is
+        never overridden.
+
+  3. The Nav2 planner (NavFn) sees these costs and routes the robot's path
+     around high-cost areas. The DWB local controller also sees them and
+     adjusts velocity reactively.
+
+  4. IMPORTANT: The Gaussian amplitude is clamped BELOW LETHAL (at 252).
+     This means the cost field is "expensive but passable." If a pedestrian
+     blocks the only corridor, the robot can still plan through (slowly
+     and reluctantly) rather than declaring the goal unreachable. This is
+     "polite" rather than "brittle."
+
+  Default Parameters:
+    amplitude      = 220.0    (peak cost, out of 253 max)
+    sigma_base     = 0.45 m   (base personal-space radius)
+    sigma_side_ratio = 0.6    (lateral sigma = 0.6 × base)
+    speed_factor   = 1.6      (how much sigma_front stretches per m/s)
+    lethal_radius  = 0.30 m   (hard no-go zone over the body)
+    cutoff         = 15.0     (ignore costs below this for efficiency)
+
+
+================================================================================
+5. HOW PEDESTRIANS DODGE THE ROBOT (ORCA / RVO2)
+================================================================================
+
+Pedestrians use a completely different avoidance mechanism: ORCA (Optimal
+Reciprocal Collision Avoidance), implemented by the RVO2 library.
+
+  1. Each pedestrian is an ORCA agent with a goal waypoint, a radius, and
+     a preferred velocity toward that waypoint.
+
+  2. Static warehouse obstacles (shelves, boxes, pillar, walls) are
+     registered as ORCA static obstacles using their exact footprints from
+     warehouse.sdf.
+
+  3. The robot is injected into ORCA as a special agent: its position and
+     velocity come from /odom (ground truth), but ORCA never modifies the
+     robot's motion. Pedestrians must avoid it; it never avoids them.
+     The robot's own avoidance comes from Nav2 + social_layer (see §4).
+
+  4. Each tick (20 Hz):
+     a) Robot's ground-truth pose/velocity is injected from /odom.
+     b) Each pedestrian's preferred velocity toward its waypoint is set.
+     c) ORCA's doStep() solves a linear program that produces a
+        GUARANTEED collision-free velocity for every pedestrian.
+     d) Pedestrians smoothly curve around obstacles, each other, and the
+        robot with no oscillation or teleporting.
+
+  5. Waypoint modes:
+     - "pingpong": walk to the end, reverse, walk back, repeat.
+     - "loop": walk through all waypoints in a cycle, then repeat.
+
+
+================================================================================
+6. PACKAGE-BY-PACKAGE BREAKDOWN
+================================================================================
+
+The workspace has 7 ROS 2 packages under src/:
+
+┌──────────────────────────────────────────────────────────────────────┐
+│ PACKAGE 1: social_nav_msgs (CMake, message definitions)             │
+│                                                                      │
+│ Purpose: Defines the custom ROS message types used to communicate    │
+│ pedestrian detections between the simulator and the costmap plugin.  │
+│ This is the "interface contract" — any future real detector just     │
+│ needs to publish these same messages.                                │
+│                                                                      │
+│ Type: ament_cmake (message generation)                               │
+└──────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────┐
+│ PACKAGE 2: social_costmap_plugin (C++, Nav2 plugin)                 │
+│                                                                      │
+│ Purpose: THE CORE DELIVERABLE. A custom Nav2 costmap layer that      │
+│ subscribes to /pedestrians and paints velocity-scaled asymmetric     │
+│ Gaussian cost fields + lethal cores around each pedestrian. This is  │
+│ what makes the robot detour around people.                           │
+│                                                                      │
+│ Type: ament_cmake (C++ plugin, loaded by Nav2 via pluginlib)         │
+└──────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────┐
+│ PACKAGE 3: pedestrian_sim (Python, pedestrian simulator)            │
+│                                                                      │
+│ Purpose: Simulates 4 pedestrians walking waypoint paths in the       │
+│ warehouse with ORCA collision avoidance. Acts as a "perfect          │
+│ perception stack" — publishes ground-truth pedestrian positions      │
+│ and velocities. Also publishes RViz markers for visualization.       │
+│                                                                      │
+│ Type: ament_python                                                   │
+│ External dependency: Python-RVO2 (built from source)                 │
+└──────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────┐
+│ PACKAGE 4: delivery_bot_description (URDF/Xacro, robot model)       │
+│                                                                      │
+│ Purpose: Defines the robot's physical model (URDF) including:        │
+│ chassis, 2 drive wheels, 2 casters, cargo platform, lidar, camera,   │
+│ IMU. Also defines Gazebo plugins (DiffDrive, sensors) and publishes  │
+│ the robot description via robot_state_publisher.                     │
+│                                                                      │
+│ Type: ament_cmake (installs URDF files + launch)                     │
+└──────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────┐
+│ PACKAGE 5: delivery_bot_gazebo (SDF world + launch)                 │
+│                                                                      │
+│ Purpose: Contains the warehouse world definition (SDF) and the       │
+│ simulation launch file. Starts Gazebo, spawns the robot, and         │
+│ launches the ROS↔Gazebo bridge for all topics (clock, cmd_vel,       │
+│ odom, tf, scan, imu, camera, joint_states).                          │
+│                                                                      │
+│ Type: ament_cmake (installs worlds + launch)                         │
+└──────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────┐
+│ PACKAGE 6: delivery_bot_navigation (config + launch)                │
+│                                                                      │
+│ Purpose: Contains all Nav2 configuration (nav2_params.yaml with the  │
+│ social_layer wired into both costmaps), SLAM configuration, the      │
+│ saved warehouse map, launch files for nav and SLAM modes, and the    │
+│ RViz configuration.                                                  │
+│                                                                      │
+│ Type: ament_cmake (installs config + launch + maps + rviz)           │
+└──────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────┐
+│ PACKAGE 7: delivery_bot_bringup (Python, top-level orchestration)   │
+│                                                                      │
+│ Purpose: Top-level launch (sim_bringup.launch.py orchestrates        │
+│ everything with staged timers), the delivery mission manager         │
+│ (drives through waypoints via Nav2 API), and the A/B metrics logger  │
+│ (records min pedestrian distance, intrusions, path length).          │
+│                                                                      │
+│ Type: ament_python                                                   │
+└──────────────────────────────────────────────────────────────────────┘
+
+
+================================================================================
+7. COMPLETE FILE LISTING WITH EXPLANATIONS
+================================================================================
+
+social_nav_ws/
+├── README.md                        Project README with install, build, run,
+│                                    and troubleshooting instructions.
+├── docs/
+│   └── DESIGN.md                    Design rationale, cost model derivation,
+│                                    TF authority design, A/B protocol, and
+│                                    interview talking points.
+│
+└── src/
+    │
+    ├── social_nav_msgs/             ─── MESSAGE DEFINITIONS ───
+    │   ├── CMakeLists.txt           Build config for message generation.
+    │   ├── package.xml              Package manifest (depends on
+    │   │                            geometry_msgs, std_msgs for message
+    │   │                            field types).
+    │   └── msg/
+    │       ├── Pedestrian.msg       One pedestrian detection:
+    │       │                          - string id (e.g. "ped_1")
+    │       │                          - geometry_msgs/Point position [m]
+    │       │                          - geometry_msgs/Vector3 velocity [m/s]
+    │       └── Pedestrians.msg      Array of Pedestrian detections with a
+    │                                shared header (frame_id + timestamp).
+    │
+    ├── social_costmap_plugin/       ─── THE CUSTOM NAV2 LAYER (C++) ───
+    │   ├── CMakeLists.txt           Builds the shared library, links against
+    │   │                            Nav2 costmap, tf2, pluginlib.
+    │   ├── package.xml              Dependencies: nav2_costmap_2d, tf2,
+    │   │                            social_nav_msgs, pluginlib.
+    │   ├── social_costmap_plugin.xml
+    │   │                            Pluginlib XML descriptor. Tells Nav2
+    │   │                            that class "social_costmap_plugin::
+    │   │                            SocialLayer" implements the
+    │   │                            nav2_costmap_2d::Layer interface. Nav2
+    │   │                            loads this at runtime via pluginlib.
+    │   ├── include/social_costmap_plugin/
+    │   │   └── social_layer.hpp     Class declaration: SocialLayer inherits
+    │   │                            nav2_costmap_2d::Layer. Declares the
+    │   │                            Nav2 interface methods (onInitialize,
+    │   │                            updateBounds, updateCosts, reset),
+    │   │                            the Gaussian cost computation, dynamic
+    │   │                            parameter callback, and all tunable
+    │   │                            parameters with defaults.
+    │   └── src/
+    │       └── social_layer.cpp     The implementation:
+    │                                - onInitialize(): declares ROS params,
+    │                                  subscribes to /pedestrians.
+    │                                - pedestriansCallback(): receives
+    │                                  detections (thread-safe via mutex).
+    │                                - updateBounds(): transforms pedestrians
+    │                                  into costmap frame via TF, computes
+    │                                  affected bounding box for each.
+    │                                - updateCosts(): for each pedestrian,
+    │                                  iterates costmap cells in the
+    │                                  bounding box, applies lethal core
+    │                                  and Gaussian cost with max() merge.
+    │                                - gaussianCost(): the asymmetric
+    │                                  Gaussian computation (rotated into
+    │                                  the pedestrian's velocity frame).
+    │                                - dynamicParametersCallback(): allows
+    │                                  live tuning via ros2 param set.
+    │
+    ├── pedestrian_sim/              ─── PEDESTRIAN SIMULATOR (Python) ───
+    │   ├── package.xml              Dependencies: rclpy, social_nav_msgs,
+    │   │                            geometry_msgs, nav_msgs, visualization_msgs.
+    │   │                            Note: Python-RVO2 is a pip dep, not
+    │   │                            a rosdep package.
+    │   ├── setup.py                 Python package setup: installs the
+    │   │                            pedestrian_simulator console_scripts
+    │   │                            entry point, plus config/ and launch/
+    │   │                            as data_files.
+    │   ├── setup.cfg                Script install directory configuration.
+    │   ├── resource/
+    │   │   └── pedestrian_sim       Empty marker file for ament index
+    │   │                            (required for package discovery).
+    │   ├── config/
+    │   │   └── pedestrians.yaml     Pedestrian scenario configuration:
+    │   │                            - frame_id: odom (coordinate frame)
+    │   │                            - update_rate: 20 Hz
+    │   │                            - 4 pedestrians (ped_1 to ped_4):
+    │   │                              each with waypoints, speed, radius,
+    │   │                              mode (pingpong/loop), noise_std.
+    │   │                            Waypoints are designed to cross the
+    │   │                            robot's delivery route so the social
+    │   │                            layer gets exercised.
+    │   ├── launch/
+    │   │   └── pedestrians.launch.py
+    │   │                            Launches the pedestrian_simulator node
+    │   │                            with parameters from pedestrians.yaml.
+    │   └── pedestrian_sim/
+    │       ├── __init__.py          Python package init (empty).
+    │       └── pedestrian_simulator.py
+    │                                The main simulator:
+    │                                - SimPed class: tracks one pedestrian's
+    │                                  waypoint progress, computes preferred
+    │                                  velocity toward current waypoint.
+    │                                - PedestrianSimulator (ROS node):
+    │                                  * Creates RVO2 ORCA simulation.
+    │                                  * Registers static obstacles (shelves,
+    │                                    boxes, pillar, walls) from
+    │                                    warehouse.sdf footprints.
+    │                                  * Adds pedestrian agents + robot
+    │                                    agent to ORCA.
+    │                                  * Subscribes to /odom for robot
+    │                                    ground truth.
+    │                                  * Every tick (20 Hz): injects robot
+    │                                    pose, sets preferred velocities,
+    │                                    calls doStep(), reads back
+    │                                    collision-free positions/velocities.
+    │                                  * Publishes /pedestrians (for the
+    │                                    social costmap plugin).
+    │                                  * Publishes /pedestrian_markers
+    │                                    (colored cylinders + velocity
+    │                                    arrows + name labels for RViz).
+    │
+    ├── delivery_bot_description/    ─── ROBOT MODEL (URDF/Xacro) ───
+    │   ├── CMakeLists.txt           Installs urdf/, launch/, meshes/.
+    │   ├── package.xml              Dependencies: xacro,
+    │   │                            robot_state_publisher, joint_state_publisher.
+    │   ├── meshes/                  (Empty, reserved for SolidWorks STL
+    │   │                            meshes in the future.)
+    │   ├── launch/
+    │   │   └── description.launch.py
+    │   │                            Runs xacro to process the URDF, then
+    │   │                            launches robot_state_publisher to
+    │   │                            publish /robot_description and TF.
+    │   └── urdf/
+    │       ├── delivery_bot.urdf.xacro
+    │       │                        The main robot description:
+    │       │                        - base_footprint: ground-plane frame
+    │       │                          (Nav2's robot_base_frame).
+    │       │                        - base_link: chassis (box 0.50 × 0.40
+    │       │                          × 0.20, 12 kg, 0.14 m above ground).
+    │       │                        - left/right_wheel_link: drive wheels
+    │       │                          (radius 0.09 m, separation 0.44 m).
+    │       │                        - front/rear_caster_link: passive
+    │       │                          casters (radius 0.045 m).
+    │       │                        - cargo_link: package platform on top.
+    │       │                        - lidar_link: 2D GPU lidar on the
+    │       │                          cargo platform.
+    │       │                        - camera_link + camera_optical_link:
+    │       │                          RGBD camera (front-facing).
+    │       │                        - imu_link: IMU sensor.
+    │       │                        Frame convention: x forward, y left,
+    │       │                        z up on every link.
+    │       ├── gazebo.xacro         Ignition Fortress plugins and sensors:
+    │       │                        - Caster friction (near-zero for
+    │       │                          differential drive kinematics).
+    │       │                        - DiffDrive plugin: subscribes /cmd_vel,
+    │       │                          publishes /odom and /tf. This is the
+    │       │                          SOLE authority for the odom →
+    │       │                          base_footprint transform.
+    │       │                        - JointStatePublisher: wheel encoder
+    │       │                          joint states → /joint_states.
+    │       │                        - GPU lidar: 360 samples, 12m range,
+    │       │                          30 Hz, published as /scan.
+    │       │                        - RGBD camera: 320×240 @ 10 Hz,
+    │       │                          published as /camera/*.
+    │       │                        - IMU: 50 Hz, published as /imu.
+    │       └── macros.xacro         Utility macros for computing inertia
+    │                                tensors of boxes, cylinders, and spheres.
+    │
+    ├── delivery_bot_gazebo/         ─── SIMULATION WORLD + LAUNCH ───
+    │   ├── CMakeLists.txt           Installs worlds/ and launch/.
+    │   ├── package.xml              Dependencies: ros_gz_sim, ros_gz_bridge.
+    │   ├── worlds/
+    │   │   └── warehouse.sdf        The warehouse world (Ignition Fortress
+    │   │                            SDF format):
+    │   │                            - Physics: 4ms step, ODE, RT factor 1.0.
+    │   │                            - Required system plugins: Physics,
+    │   │                              UserCommands, SceneBroadcaster,
+    │   │                              Sensors (ogre2), Imu.
+    │   │                            - Interior: 12 × 9 meters.
+    │   │                            - 4 outer walls (north/south/east/west).
+    │   │                            - 2 shelves (shelf_a at y=+2,
+    │   │                              shelf_b at y=-2, both at x=-1).
+    │   │                            - 2 boxes (box_1 at (4.8, 3.2),
+    │   │                              box_2 at (4.8, -3.2)).
+    │   │                            - 1 pillar at (-3.5, -2.5).
+    │   │                            - Robot spawns at origin (0, 0).
+    │   └── launch/
+    │       └── sim.launch.py        Simulation bringup:
+    │                                1. Starts Ignition Gazebo with warehouse.
+    │                                2. Launches robot_state_publisher (via
+    │                                   description.launch.py).
+    │                                3. Spawns robot from /robot_description.
+    │                                4. Starts ros_gz_bridge bridging:
+    │                                   /clock, /cmd_vel, /odom, /tf,
+    │                                   /scan, /imu, /camera/*, /joint_states.
+    │
+    ├── delivery_bot_navigation/     ─── NAV2 CONFIGURATION ───
+    │   ├── CMakeLists.txt           Installs config/, launch/, maps/, rviz/.
+    │   ├── package.xml              Dependencies: nav2_bringup, slam_toolbox.
+    │   ├── config/
+    │   │   ├── nav2_params.yaml     FULL Nav2 configuration (322 lines):
+    │   │   │                        - AMCL: particle filter localization
+    │   │   │                          with auto-init at (0,0,0).
+    │   │   │                        - Controller server: DWB with
+    │   │   │                          GoalAlign, PathAlign, GoalDist,
+    │   │   │                          PathDist, ObstacleFootprint,
+    │   │   │                          RotateToGoal critics.
+    │   │   │                        - Planner server: NavFn (A* with
+    │   │   │                          cost-aware planning).
+    │   │   │                        - Global costmap: static + obstacle +
+    │   │   │                          inflation + SOCIAL_LAYER layers.
+    │   │   │                        - Local costmap: voxel + inflation +
+    │   │   │                          SOCIAL_LAYER layers.
+    │   │   │                        - Behavior server: spin, backup, wait.
+    │   │   │                        - Velocity smoother: smooths Nav2
+    │   │   │                          cmd_vel output.
+    │   │   │                        The social_layer is wired into BOTH
+    │   │   │                        costmaps so both global planning and
+    │   │   │                        local control respect pedestrians.
+    │   │   └── slam_params.yaml     slam_toolbox parameters for async
+    │   │                            online mapping (Phase 3).
+    │   ├── maps/
+    │   │   ├── warehouse.yaml       Map metadata (resolution, origin,
+    │   │   │                        occupancy thresholds).
+    │   │   ├── warehouse.pgm        The saved occupancy grid map image
+    │   │   │                        (generated in Phase 3 by driving
+    │   │   │                        the robot with teleop + slam_toolbox).
+    │   │   └── README.md            Instructions on how to regenerate
+    │   │                            the map if needed.
+    │   ├── rviz/
+    │   │   └── nav.rviz             RViz configuration showing: robot model,
+    │   │                            TF, lidar scan, global/local costmaps,
+    │   │                            planned path, pedestrian markers,
+    │   │                            Nav2 panel. Configured for Transient
+    │   │                            Local durability on map topics.
+    │   └── launch/
+    │       ├── nav.launch.py        Phases 4-6: wraps nav2_bringup/
+    │       │                        bringup_launch.py with the project's
+    │       │                        params. Supports slam:=True/False.
+    │       └── slam.launch.py       Phase 3: runs slam_toolbox alone
+    │                                for map building (no Nav2).
+    │
+    └── delivery_bot_bringup/        ─── TOP-LEVEL ORCHESTRATION ───
+        ├── package.xml              Dependencies: all other packages,
+        │                            nav2_simple_commander.
+        ├── setup.py                 Installs delivery_manager and
+        │                            metrics_logger entry points.
+        ├── setup.cfg                Script install directory.
+        ├── resource/
+        │   └── delivery_bot_bringup Empty ament index marker.
+        ├── config/
+        │   └── mission.yaml         Delivery mission configuration:
+        │                            - 4 waypoints: NW pickup → NE dropoff
+        │                              → SE dropoff → SW return.
+        │                            - 2 loops of the route.
+        │                            - 180s timeout per leg.
+        │                            - localizer: amcl (for saved-map mode).
+        │                            Routes cross all 4 pedestrian paths
+        │                            to exercise the social layer.
+        ├── launch/
+        │   └── sim_bringup.launch.py
+        │                            TOP-LEVEL LAUNCH — one command brings
+        │                            up everything:
+        │                            1. sim.launch.py (Gazebo + bridge)
+        │                            2. nav.launch.py or slam.launch.py
+        │                               (after 5s delay for Gazebo startup)
+        │                            3. pedestrians.launch.py (after 6s)
+        │                            4. RViz (after 7s)
+        │                            Arguments: mode (nav/slam),
+        │                            pedestrians (True/False),
+        │                            rviz (True/False).
+        └── delivery_bot_bringup/
+            ├── __init__.py          Python package init (empty).
+            ├── delivery_manager.py  Delivery mission manager:
+            │                        - Uses nav2_simple_commander to send
+            │                          waypoints sequentially.
+            │                        - Each leg has a timeout guard.
+            │                        - Prints per-leg results and a final
+            │                          mission summary (succeeded/failed/
+            │                          canceled legs, total time).
+            │                        - Designed for A/B protocol: run the
+            │                          same mission with social layer
+            │                          ON vs OFF.
+            └── metrics_logger.py    A/B evaluation logger:
+                                     - Subscribes to /odom and /pedestrians.
+                                     - Computes: run duration, robot path
+                                       length, min robot-pedestrian
+                                       distance, personal-space intrusions
+                                       (< 0.8m).
+                                     - Writes CSV + prints summary on
+                                       Ctrl-C.
+                                     - Run once per condition (baseline
+                                       vs social) for comparison.
+
+
+================================================================================
+8. DATA FLOW: TOPICS, TF FRAMES, AND MESSAGES
+================================================================================
+
+KEY ROS TOPICS:
+─────────────────────────────────────────────────────────────────────────────
+  /clock             rosgraph_msgs/Clock       Gazebo → all nodes (sim time)
+  /cmd_vel           geometry_msgs/Twist       Nav2 → Gazebo DiffDrive
+  /odom              nav_msgs/Odometry         Gazebo DiffDrive → Nav2,
+                                               pedestrian_sim
+  /tf                tf2_msgs/TFMessage        DiffDrive (odom→base_footprint)
+                                               + robot_state_publisher
+                                               + AMCL (map→odom)
+  /scan              sensor_msgs/LaserScan     Gazebo lidar → Nav2 costmap
+  /joint_states      sensor_msgs/JointState    Gazebo → robot_state_publisher
+  /pedestrians       social_nav_msgs/          pedestrian_sim → social_layer
+                     Pedestrians               (position + velocity per person)
+  /pedestrian_markers visualization_msgs/      pedestrian_sim → RViz
+                     MarkerArray               (cylinders, arrows, labels)
+  /map               nav_msgs/OccupancyGrid    map_server/slam_toolbox → Nav2
+  /goal_pose         geometry_msgs/PoseStamped RViz → Nav2 (user goal clicks)
+─────────────────────────────────────────────────────────────────────────────
+
+TF FRAME TREE:
+─────────────────────────────────────────────────────────────────────────────
+  map → odom                    AMCL (saved map) or slam_toolbox (SLAM)
+  odom → base_footprint         Gazebo DiffDrive plugin (via bridge)
+  base_footprint → base_link    robot_state_publisher (from URDF)
+  base_link → left_wheel_link   robot_state_publisher
+  base_link → right_wheel_link  robot_state_publisher
+  base_link → front_caster_link robot_state_publisher
+  base_link → rear_caster_link  robot_state_publisher
+  base_link → cargo_link        robot_state_publisher
+  cargo_link → lidar_link       robot_state_publisher
+  base_link → camera_link       robot_state_publisher
+  camera_link → camera_optical_link  robot_state_publisher
+  base_link → imu_link          robot_state_publisher
+
+  RULE: One transform, one owner. No two nodes ever publish the same TF.
+─────────────────────────────────────────────────────────────────────────────
+
+
+================================================================================
+9. THE A/B EVALUATION PROTOCOL
+================================================================================
+
+The same delivery mission is run twice — identical except for one toggle:
+
+  BASELINE (A): Social layer disabled in both costmaps.
+    → Robot can't see pedestrians (they're not lidar obstacles).
+    → Robot drives straight through them.
+
+  SOCIAL (B): Social layer enabled (default).
+    → Robot detects pedestrians via /pedestrians topic.
+    → Robot routes around their projected paths.
+
+Commands:
+  # Run B first (social layer ON by default):
+  ros2 run delivery_bot_bringup metrics_logger \
+      --ros-args -p label:=social -p use_sim_time:=true
+  ros2 run delivery_bot_bringup delivery_manager --ros-args \
+      --params-file <path>/mission.yaml
+  # Ctrl-C metrics_logger → saves social CSV
+
+  # Then disable social layer for Run A:
+  ros2 param set /global_costmap/global_costmap social_layer.enabled false
+  ros2 param set /local_costmap/local_costmap  social_layer.enabled false
+  ros2 run delivery_bot_bringup metrics_logger \
+      --ros-args -p label:=baseline -p use_sim_time:=true
+  ros2 run delivery_bot_bringup delivery_manager --ros-args \
+      --params-file <path>/mission.yaml
+  # Ctrl-C metrics_logger → saves baseline CSV
+
+Expected results:
+  ┌────────────────────────────┬──────────┬─────────┐
+  │ Metric                     │ Baseline │ Social  │
+  ├────────────────────────────┼──────────┼─────────┤
+  │ Min pedestrian distance    │ Low      │ Higher  │
+  │ Personal-space intrusions  │ High     │ Low     │
+  │ Path length                │ Shorter  │ Longer  │
+  │ Duration                   │ Shorter  │ Longer  │
+  └────────────────────────────┴──────────┴─────────┘
+
+The trade-off is intentional: the social configuration accepts a small
+path/time cost to buy a large reduction in personal-space intrusion.
+
+
+================================================================================
+10. HOW TO RUN THE PROJECT
+================================================================================
+
+PREREQUISITES:
+  sudo apt install -y ros-humble-desktop ros-humble-ros-gz \
+    ros-humble-navigation2 ros-humble-nav2-bringup ros-humble-slam-toolbox \
+    ros-humble-nav2-simple-commander ros-humble-teleop-twist-keyboard \
+    ros-humble-xacro ros-humble-joint-state-publisher-gui
+
+  # Python-RVO2 (ORCA, for pedestrian simulation):
+  sudo apt install -y cmake build-essential
+  pip3 install Cython
+  git clone https://github.com/sybrenstuvel/Python-RVO2.git
+  cd Python-RVO2 && pip3 install . && cd ..
+
+BUILD:
+  cd ~/social_nav_ws
+  colcon build --symlink-install
+  source install/setup.bash
+
+PHASE 2 — Simulation + Teleop (verify plumbing):
+  ros2 launch delivery_bot_gazebo sim.launch.py
+  ros2 run teleop_twist_keyboard teleop_twist_keyboard    # another terminal
+  ros2 topic hz /scan /odom /joint_states                  # verify topics
+
+PHASE 3 — Build the Map:
+  ros2 launch delivery_bot_bringup sim_bringup.launch.py mode:=slam rviz:=True
+  ros2 run teleop_twist_keyboard teleop_twist_keyboard
+  # Drive every aisle, then save:
+  ros2 run nav2_map_server map_saver_cli \
+      -f ~/social_nav_ws/src/delivery_bot_navigation/maps/warehouse
+  colcon build --packages-select delivery_bot_navigation
+
+PHASE 4 — Stock Navigation (no pedestrians):
+  ros2 launch delivery_bot_bringup sim_bringup.launch.py \
+      mode:=nav pedestrians:=False
+  # Use "2D Goal Pose" in RViz to test navigation.
+
+PHASES 5-6 — Full Social Navigation:
+  ros2 launch delivery_bot_bringup sim_bringup.launch.py mode:=nav
+  # Pedestrians appear; social costmap visible; robot detours around them.
+
+LIVE TUNING (during the demo):
+  ros2 param set /global_costmap/global_costmap social_layer.amplitude 180.0
+  ros2 param set /global_costmap/global_costmap social_layer.speed_factor 2.2
+
+
+================================================================================
+11. KEY DESIGN DECISIONS
+================================================================================
+
+1. WHY PEDESTRIANS ARE A ROS NODE, NOT GAZEBO ACTORS:
+   - Ignition Fortress actors have no collision physics.
+   - Clean separation: the project's contribution is navigation-side. Perception
+     is simulated as ground truth and can be swapped for a real detector later
+     (same message interface).
+   - The A/B demo is unambiguous: with social layer off, the baseline stack
+     literally cannot see the pedestrians (they're not lidar obstacles).
+
+2. WHY ORCA (RVO2) FOR PEDESTRIANS:
+   - The original code used a hand-rolled repulsion force with a teleport
+     fallback. This had a specific bug: when a pedestrian walked straight at a
+     stopped robot, the cross product for side selection was near-zero
+     (floating-point noise), causing oscillation then teleportation.
+   - ORCA's linear-programming formulation guarantees a collision-free velocity
+     each step. No oscillation by construction, no "which side" ambiguity.
+
+3. WHY THE GAUSSIAN AMPLITUDE IS CAPPED BELOW LETHAL:
+   - If amplitude = LETHAL (253), a pedestrian blocking the only corridor would
+     make the goal unreachable. Nav2 would abort.
+   - With amplitude < LETHAL (default 220), the cost is "expensive but
+     passable." The robot yields and waits, or plans through slowly, rather
+     than dead-locking. This is "polite" rather than "brittle."
+
+4. WHY frame_id IS odom (NOT map):
+   - The pedestrian simulator publishes raw world/Gazebo coordinates.
+   - The robot spawns at (0,0), so odom coordinates == world coordinates.
+   - If frame_id were "map", the pedestrian positions would drift whenever AMCL
+     applies a map→odom correction (e.g., after "2D Pose Estimate").
+
+5. WHY THE SOCIAL LAYER IS IN BOTH COSTMAPS:
+   - Global costmap: the planner (NavFn) routes the path around pedestrians'
+     projected personal space → proactive avoidance.
+   - Local costmap: the controller (DWB) slows/veers reactively near
+     pedestrians → responsive avoidance even if the global path passes close.
+
+6. TF AUTHORITY — ONE TRANSFORM, ONE OWNER:
+   - map → odom: AMCL or slam_toolbox (never both).
+   - odom → base_footprint: Gazebo DiffDrive plugin (via bridge).
+   - base_footprint → everything else: robot_state_publisher (from URDF).
+   - No two nodes ever publish the same transform.
+
+================================================================================
+END OF DOCUMENT
+================================================================================

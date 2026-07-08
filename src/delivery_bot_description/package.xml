@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>delivery_bot_description</name>
+  <version>0.1.0</version>
+  <description>
+    URDF/Xacro model of the delivery_bot differential-drive robot,
+    including Ignition Fortress systems (DiffDrive, JointStatePublisher)
+    and sensors (gpu_lidar, IMU, RGB-D camera).
+  </description>
+  <maintainer email="AshwinderPalSingh@users.noreply.github.com">AshwinderPalSingh</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>xacro</exec_depend>
+  <!-- Only used for the standalone URDF check workflow -->
+  <exec_depend>joint_state_publisher_gui</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
