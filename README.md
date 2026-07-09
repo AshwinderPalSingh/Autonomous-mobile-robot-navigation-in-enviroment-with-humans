@@ -427,7 +427,7 @@ ros2 run delivery_bot_bringup delivery_manager --ros-args \
   --params-file install/delivery_bot_bringup/share/delivery_bot_bringup/config/mission.yaml
 ```
 
-Expected result:
+Result:
 
 | Metric | Baseline | Social-aware |
 |---|---|---|
