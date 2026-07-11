@@ -145,13 +145,24 @@ The robot avoids pedestrians through the SOCIAL COSTMAP PLUGIN. Here's how:
      and reluctantly) rather than declaring the goal unreachable. This is
      "polite" rather than "brittle."
 
-  Default Parameters:
+  Code Defaults (declared in social_layer.hpp):
     amplitude      = 220.0    (peak cost, out of 253 max)
     sigma_base     = 0.45 m   (base personal-space radius)
     sigma_side_ratio = 0.6    (lateral sigma = 0.6 × base)
     speed_factor   = 1.6      (how much sigma_front stretches per m/s)
     lethal_radius  = 0.30 m   (hard no-go zone over the body)
     cutoff         = 15.0     (ignore costs below this for efficiency)
+
+  Deployed Runtime Values (set in nav2_params.yaml, both costmaps):
+    amplitude      = 120.0    (peak cost, out of 253 max)
+    sigma_base     = 0.35 m   (base personal-space radius)
+    sigma_side_ratio = 0.6    (lateral sigma = 0.6 × base)
+    speed_factor   = 1.6      (how much sigma_front stretches per m/s)
+    lethal_radius  = 0.30 m   (hard no-go zone over the body)
+    cutoff         = 15.0     (ignore costs below this for efficiency)
+
+  The YAML values above are what the robot actually runs with. The header
+  defaults are fallbacks used only if a parameter is left unset in YAML.
 
 
 ================================================================================
@@ -414,7 +425,7 @@ social_nav_ws/
     │       │                        - cargo_link: package platform on top.
     │       │                        - lidar_link: 2D GPU lidar on the
     │       │                          cargo platform.
-    │       │                        - camera_link + camera_optical_link:
+    │       │                        - camera_link + camera_link_optical:
     │       │                          RGBD camera (front-facing).
     │       │                        - imu_link: IMU sensor.
     │       │                        Frame convention: x forward, y left,
@@ -429,10 +440,10 @@ social_nav_ws/
     │       │                        - JointStatePublisher: wheel encoder
     │       │                          joint states → /joint_states.
     │       │                        - GPU lidar: 360 samples, 12m range,
-    │       │                          30 Hz, published as /scan.
+    │       │                          10 Hz, published as /scan.
     │       │                        - RGBD camera: 320×240 @ 10 Hz,
     │       │                          published as /camera/*.
-    │       │                        - IMU: 50 Hz, published as /imu.
+    │       │                        - IMU: 100 Hz, published as /imu.
     │       └── macros.xacro         Utility macros for computing inertia
     │                                tensors of boxes, cylinders, and spheres.
     │
@@ -475,8 +486,9 @@ social_nav_ws/
     │   │   │                          GoalAlign, PathAlign, GoalDist,
     │   │   │                          PathDist, ObstacleFootprint,
     │   │   │                          RotateToGoal critics.
-    │   │   │                        - Planner server: NavFn (A* with
-    │   │   │                          cost-aware planning).
+    │   │   │                        - Planner server: NavFn (Dijkstra-based
+    │   │   │                          search over the costmap, with
+    │   │   │                          use_astar set to false).
     │   │   │                        - Global costmap: static + obstacle +
     │   │   │                          inflation + SOCIAL_LAYER layers.
     │   │   │                        - Local costmap: voxel + inflation +
@@ -598,7 +610,7 @@ TF FRAME TREE:
   base_link → cargo_link        robot_state_publisher
   cargo_link → lidar_link       robot_state_publisher
   base_link → camera_link       robot_state_publisher
-  camera_link → camera_optical_link  robot_state_publisher
+  camera_link → camera_link_optical  robot_state_publisher
   base_link → imu_link          robot_state_publisher
 
   RULE: One transform, one owner. No two nodes ever publish the same TF.
@@ -721,9 +733,9 @@ LIVE TUNING (during the demo):
 3. WHY THE GAUSSIAN AMPLITUDE IS CAPPED BELOW LETHAL:
    - If amplitude = LETHAL (253), a pedestrian blocking the only corridor would
      make the goal unreachable. Nav2 would abort.
-   - With amplitude < LETHAL (default 220), the cost is "expensive but
-     passable." The robot yields and waits, or plans through slowly, rather
-     than dead-locking. This is "polite" rather than "brittle."
+   - With amplitude < LETHAL (default 220 in code, 120 as deployed), the cost
+     is "expensive but passable." The robot yields and waits, or plans through
+     slowly, rather than dead-locking. This is "polite" rather than "brittle."
 
 4. WHY frame_id IS odom (NOT map):
    - The pedestrian simulator publishes raw world/Gazebo coordinates.
