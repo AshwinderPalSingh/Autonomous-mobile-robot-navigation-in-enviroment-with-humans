@@ -204,7 +204,7 @@ costmap:
    Social costs only raise the master costmap value. They never erase real
    obstacles detected by lidar or loaded from the map.
 
-Default social layer parameters:
+Code defaults, declared in `social_layer.hpp`:
 
 | Parameter | Default | Meaning |
 |---|---:|---|
@@ -214,6 +214,20 @@ Default social layer parameters:
 | `speed_factor` | `1.6` | Forward stretch per m/s of pedestrian speed. |
 | `lethal_radius` | `0.30 m` | Hard no-go radius around the pedestrian. |
 | `cutoff` | `15.0` | Ignore smaller costs for efficient updates. |
+
+Deployed runtime values, set in `nav2_params.yaml` for both costmaps:
+
+| Parameter | Deployed value | Meaning |
+|---|---:|---|
+| `amplitude` | `120.0` | Peak social cost below lethal. |
+| `sigma_base` | `0.35 m` | Base personal-space radius. |
+| `sigma_side_ratio` | `0.6` | Side clearance multiplier. |
+| `speed_factor` | `1.6` | Forward stretch per m/s of pedestrian speed. |
+| `lethal_radius` | `0.30 m` | Hard no-go radius around the pedestrian. |
+| `cutoff` | `15.0` | Ignore smaller costs for efficient updates. |
+
+The deployed values are what the robot actually runs with; the header defaults
+only apply if a parameter is left unset in YAML.
 
 ---
 
